@@ -1,0 +1,21 @@
+[project]
+name = "mcp-scc"
+version = "0.1.0"
+description = "MCP server for Boston University Shared Computing Cluster (SCC) documentation and job helpers"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.12,<2",
+    "chromadb>=0.5",
+    "pyyaml>=6",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["server", "resource_loader"]
+
+[tool.setuptools.packages.find]
+include = ["tools*", "prompts*"]

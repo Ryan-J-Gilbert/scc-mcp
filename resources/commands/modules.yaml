@@ -1,0 +1,55 @@
+meta:
+  uri: scc://commands/modules
+  name: Environment modules (Lmod)
+  description: module load, avail, spider, and list patterns on SCC login and compute nodes.
+  mime_type: text/yaml
+
+overview: |
+  SCC typically uses Lmod (Lua-based modules). Modules adjust PATH, LD_LIBRARY_PATH, and compiler
+  toolchain for scientific software stacks. Always load modules inside batch scripts, not only
+  in your login shell.
+
+core_commands:
+  module_load:
+    syntax: module load <name[/version]> [<name2> ...]
+    notes:
+      - Load order can matter when mixing compilers, MPI, and CUDA.
+      - Prefer explicit versions (module load gcc/12) over defaults when reproducibility matters.
+  module_purge:
+    syntax: module purge
+    notes:
+      - Clears the current module stack; common first line in batch scripts before explicit loads.
+  module_list:
+    syntax: module list
+    meaning: Show currently loaded modules.
+  module_avail:
+    syntax: module avail [substring]
+    meaning: List available modules; optional substring filters the tree.
+  module_spider:
+    syntax: module spider <name>
+    meaning: Describe a module and versions, including what other modules may be prerequisites.
+
+discovery_workflow:
+  - step: module avail 2>&1 | less
+    detail: Browse the full tree; output can be long.
+  - step: module avail cuda
+    detail: Narrow search to CUDA-related modules.
+  - step: module spider openmpi
+    detail: Inspect versions and conflicts before loading in a job.
+
+collections_and_hierarchy:
+  note: |
+    Some sites expose hierarchical modules (compiler/MPI families). If a load fails, read the
+    error text: you may need to load a compiler module before an MPI or application module.
+
+batch_script_snippet: |
+  module purge
+  module load gcc/12.2.0
+  module load openmpi/4.1.x
+  which mpicc
+  mpicc -show
+
+gotchas:
+  - Login node module cache may differ slightly from compute images; test inside a short job.
+  - Mixing Intel and GNU stacks in one job usually fails; pick one toolchain per job.
+  - For Python + CUDA stacks, load CUDA before installing GPU wheels in a venv when building from source.

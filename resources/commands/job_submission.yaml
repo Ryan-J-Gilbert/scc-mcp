@@ -1,0 +1,83 @@
+meta:
+  uri: scc://commands/job_submission
+  name: Slurm job submission and control
+  description: Common sbatch, squeue, and scancel flags with short examples for SCC.
+  mime_type: text/yaml
+
+overview: |
+  SCC uses Slurm for scheduling. Submit batch scripts with sbatch, monitor with squeue/scontrol,
+  and cancel with scancel. Always confirm partition and account strings with your PI or SCC staff.
+
+sbatch:
+  description: Submit a batch script to the scheduler queue.
+  common_flags:
+    - flag: "-J, --job-name"
+      meaning: Human-readable job name shown in squeue.
+    - flag: "-p, --partition"
+      meaning: Target partition (e.g. shared, interactive, or a GPU partition).
+    - flag: "-A, --account"
+      meaning: Slurm account / project to charge (SCC-specific string from your allocation).
+    - flag: "-t, --time"
+      meaning: Wall clock limit HH:MM:SS (must be within partition limits).
+    - flag: "-N, --nodes"
+      meaning: Number of nodes.
+    - flag: "-n, --ntasks"
+      meaning: Number of tasks (MPI ranks unless using srun overrides).
+    - flag: "--mem"
+      meaning: Memory per node or per CPU depending on cluster config; verify with SCC docs.
+    - flag: "-c, --cpus-per-task"
+      meaning: CPUs allocated per task for OpenMP / threaded codes.
+    - flag: "-o, -e"
+      meaning: Paths for stdout / stderr files; %j expands to job id.
+    - flag: "--gres"
+      meaning: Generic resources, commonly GPUs, e.g. --gres=gpu:1.
+    - flag: "-a, --array"
+      meaning: Job array specification such as 1-100%10 (task id available as SLURM_ARRAY_TASK_ID).
+  example: |
+    #!/bin/bash
+    #SBATCH -J myjob
+    #SBATCH -p shared
+    #SBATCH -A <BU_SCC_PROJECT>
+    #SBATCH -t 01:00:00
+    #SBATCH -n 4
+    #SBATCH -o logs/%j.out
+    module purge
+    module load gcc
+    srun ./my_mpi_program
+
+squeue:
+  description: Show jobs in the queue.
+  useful_flags:
+    - flag: "-u $USER"
+      meaning: Only your jobs.
+    - flag: "-p PARTITION"
+      meaning: Filter by partition.
+    - flag: "-t PENDING,RUNNING"
+      meaning: Filter by state.
+    - flag: "-l"
+      meaning: Long format with more fields.
+    - flag: "--start"
+      meaning: Estimated start times when available.
+  example: squeue -u $USER -o "%.18i %.9P %.20j %.8u %.8T %.10M %.6D %R"
+
+scancel:
+  description: Cancel pending or running jobs.
+  patterns:
+    - command: scancel <jobid>
+      meaning: Cancel a single job or array parent id.
+    - command: scancel -u $USER
+      meaning: Cancel all of your jobs (dangerous).
+    - command: scancel --name=pattern
+      meaning: Cancel jobs whose name matches pattern (use with care).
+  tip: Prefer cancelling by explicit job id copied from squeue.
+
+scontrol:
+  note: |
+    Administrative and detailed job information (scontrol show job <id>, hold/release).
+    Some subcommands are restricted; see SCC documentation for supported usage.
+
+interactive:
+  hint: |
+    For an interactive shell or single command on a compute node, SCC may offer salloc/srun
+    patterns or dedicated interactive partitions—check current SCC user guide for the
+    recommended incantation on this cluster.

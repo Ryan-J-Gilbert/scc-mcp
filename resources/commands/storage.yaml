@@ -1,0 +1,41 @@
+meta:
+  uri: scc://commands/storage
+  name: Storage, quotas, and common paths
+  description: Quota-related commands and typical scratch/project path patterns on SCC.
+  mime_type: text/yaml
+
+disclaimer: |
+  Exact mount points and policy change over time. Treat the paths below as illustrative patterns;
+  verify against the current SCC storage documentation and `df -h` on the system you use.
+
+path_patterns:
+  home:
+    pattern: "~ or $HOME"
+    use: Small files, source, dotfiles; often backed up but limited quota.
+  scratch:
+    pattern: "$SCRATCH or /path/to/scratch/<user>"
+    use: High-performance parallel filesystem space for job I/O; purge policies may apply.
+  project:
+    pattern: "/project/<group_name>/..."
+    use: Shared allocation storage for a lab or grant; permissions managed by the PI.
+
+quota_and_usage_commands:
+  - command: "quota -s"
+    note: Classic NFS quota view when applicable.
+  - command: "df -h"
+    note: See mounted filesystems and free space for current hosts.
+  - command: "lfs quota -h -u $USER /scratch_mount_point"
+    note: Lustre sites sometimes expose lfs quota; mount name varies—check SCC docs.
+  - command: "du -sh directory"
+    note: Measure footprint before archiving or moving data.
+
+data_movement:
+  - pattern: rsync -avh --progress src/ dest/
+    note: Preferred for large trees; combine with `-h` for human sizes.
+  - pattern: tar -cf archive.tar data/ && pigz archive.tar
+    note: Compress archives on compute if CPU allows; avoid heavy gzip on login nodes at scale.
+
+job_io_recommendations:
+  - Read inputs from project or read-only reference datasets when possible.
+  - Write large temporary files to scratch, not home.
+  - Use unique per-job subdirectories to avoid collisions in shared project space.
