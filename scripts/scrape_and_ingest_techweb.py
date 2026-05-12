@@ -39,6 +39,11 @@ SKIP_ARTICLES = frozenset(
     {"https://www.bu.edu/tech/support/research/whats-happening/updates/"}
 )
 
+# Newsletter-style “highlights” pages are low-signal for documentation RAG; skip entire subtree.
+HIGHLIGHTS_EXCLUDE_PREFIX = (
+    "https://www.bu.edu/tech/support/research/whats-happening/highlights"
+)
+
 DEFAULT_BASE_URL = "https://www.bu.edu/tech/support/research/"
 DEFAULT_COLLECTION = "scc_documentation"
 
@@ -46,6 +51,14 @@ DEFAULT_COLLECTION = "scc_documentation"
 def crawl_key(url: str) -> str:
     base, _frag = urldefrag(url)
     return base
+
+
+def _is_highlights_excluded(url: str) -> bool:
+    """True if URL is under .../whats-happening/highlights/ (not useful for tech docs ingest)."""
+    key = crawl_key(url)
+    base = HIGHLIGHTS_EXCLUDE_PREFIX.rstrip("/")
+    k = key.rstrip("/")
+    return k == base or k.startswith(base + "/")
 
 
 def _project_root() -> Path:
@@ -147,12 +160,20 @@ class BUResearchScraper:
             href = link.get("href")
             if href and href.startswith("https://www.bu.edu/tech/support/research/"):
                 full_url = urljoin(self.base_url, href)
-                links.append(crawl_key(full_url))
+                key = crawl_key(full_url)
+                if _is_highlights_excluded(key):
+                    continue
+                links.append(key)
         return list(dict.fromkeys(links))
 
     def scrape_recursively(self, url: str, depth: int = 1, max_depth: int = 10) -> None:
         canonical = crawl_key(url)
         if depth > max_depth or canonical in self.visited_urls:
+            return
+
+        if _is_highlights_excluded(canonical):
+            self.visited_urls.add(canonical)
+            logger.info("Skipping highlights subtree: %s", canonical)
             return
 
         self.visited_urls.add(canonical)
