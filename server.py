@@ -7,6 +7,7 @@ Environment:
   (default: ``<this_dir>/resources``).
 - ``SCC_CHROMA_PATH``: Chroma persistence path (default: ``<this_dir>/data/chroma``).
 - ``SCC_CHROMA_COLLECTION``: documentation collection name (default: ``scc_documentation``, TechWeb scrape).
+- ``SCC_SEARCH_DOCS_MAX_CHARS_PER_HIT``: default body length cap per search hit (default ``8000``; ``0`` = unlimited).
 - ``SCC_LOG_LEVEL``: Python logging level for this process (default: ``WARNING``).
 
 Run (from ``mcp-scc/``):
@@ -80,7 +81,9 @@ async def handle_list_tools() -> list[types.Tool]:
             name="search_docs",
             description=(
                 "Semantic search over ingested BU TechWeb SCC documentation in ChromaDB "
-                "(batch submission, PEs, MPI, GPUs, scratch, modules, etc.)."
+                "(batch submission, PEs, MPI, GPUs, scratch, modules, etc.). "
+                "Each hit is a full article (not a small chunk); keep top_k low (1–3) unless you need breadth. "
+                "Long articles are truncated per max_chars_per_hit to limit tokens."
             ),
             inputSchema={
                 "type": "object",
@@ -92,9 +95,18 @@ async def handle_list_tools() -> list[types.Tool]:
                     "top_k": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 50,
-                        "default": 5,
-                        "description": "Number of chunks to return.",
+                        "maximum": 12,
+                        "default": 3,
+                        "description": "Number of matching articles to return (each hit can be large).",
+                    },
+                    "max_chars_per_hit": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 8000,
+                        "description": (
+                            "Max characters of article body per hit; metadata is always included. "
+                            "Use 0 for no truncation (high token use). Omit to use env default."
+                        ),
                     },
                 },
                 "required": ["query"],
@@ -111,12 +123,21 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
     query = args.get("query")
     if not query or not isinstance(query, str):
         raise ValueError("Missing or invalid required parameter: query (string)")
-    raw_top = args.get("top_k", 5)
+    raw_top = args.get("top_k", 3)
     try:
         top_k_int = int(raw_top)
     except (TypeError, ValueError) as exc:
         raise ValueError("top_k must be an integer") from exc
-    text = search_docs(query, top_k=top_k_int)
+    raw_cap = args.get("max_chars_per_hit")
+    max_chars: int | None
+    if raw_cap is None:
+        max_chars = None
+    else:
+        try:
+            max_chars = int(raw_cap)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("max_chars_per_hit must be an integer") from exc
+    text = search_docs(query, top_k=top_k_int, max_chars_per_hit=max_chars)
     return [types.TextContent(type="text", text=text)]
 
 

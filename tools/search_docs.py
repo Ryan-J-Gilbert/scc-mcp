@@ -8,12 +8,32 @@ from pathlib import Path
 import chromadb
 
 
+def _default_max_chars_per_hit() -> int:
+    raw = os.environ.get("SCC_SEARCH_DOCS_MAX_CHARS_PER_HIT", "4000").strip()
+    if not raw:
+        return 8000
+    try:
+        n = int(raw)
+    except ValueError:
+        return 8000
+    return max(0, n)
+
+
+def _truncate_document(text: str, max_chars: int) -> str:
+    """Cap body size; each ingested doc is a full article, so limits dominate token use."""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    omitted = len(text) - max_chars
+    return text[:max_chars].rstrip() + f"\n\n...[truncated, {omitted} characters omitted]"
+
+
 def search_docs(
     query: str,
     *,
     chroma_path: str | None = None,
     collection_name: str | None = None,
-    top_k: int = 5,
+    top_k: int = 3,
+    max_chars_per_hit: int | None = None,
 ) -> str:
     """
     Run a similarity search against the TechWeb-derived documentation collection (SGE / SCC operations).
@@ -22,11 +42,16 @@ def search_docs(
 
     - ``SCC_CHROMA_PATH``: persistence directory (default: ``<mcp-scc>/data/chroma``).
     - ``SCC_CHROMA_COLLECTION``: collection name (default: ``scc_documentation``, populated by ``scripts/scrape_and_ingest_techweb.py``).
+    - ``SCC_SEARCH_DOCS_MAX_CHARS_PER_HIT``: default character cap per hit when ``max_chars_per_hit`` is omitted (``0`` = unlimited).
     """
     base = Path(__file__).resolve().parent.parent
     path = Path(chroma_path or os.environ.get("SCC_CHROMA_PATH", str(base / "data" / "chroma")))
     name = collection_name or os.environ.get("SCC_CHROMA_COLLECTION", "scc_documentation")
-    top_k = max(1, min(int(top_k), 50))
+    top_k = max(1, min(int(top_k), 12))
+    if max_chars_per_hit is None:
+        max_chars_per_hit = _default_max_chars_per_hit()
+    else:
+        max_chars_per_hit = int(max_chars_per_hit)
 
     if not path.is_dir():
         return (
@@ -64,7 +89,12 @@ def search_docs(
         lines.append("No hits returned.")
         return "\n".join(lines)
 
-    lines.append(f"Collection: {name!r} | query: {query!r} | top_k={top_k}\n")
+    cap_note = (
+        f" | max_chars_per_hit={max_chars_per_hit}"
+        if max_chars_per_hit > 0
+        else " | max_chars_per_hit=unlimited"
+    )
+    lines.append(f"Collection: {name!r} | query: {query!r} | top_k={top_k}{cap_note}\n")
     for i, rid in enumerate(row_ids):
         dist = row_dists[i] if i < len(row_dists) else None
         meta = row_metas[i] if i < len(row_metas) else None
@@ -73,6 +103,9 @@ def search_docs(
         if meta:
             lines.append(f"metadata: {meta}")
         if doc:
-            lines.append(doc.strip())
+            body = doc.strip()
+            if max_chars_per_hit > 0:
+                body = _truncate_document(body, max_chars_per_hit)
+            lines.append(body)
         lines.append("")
     return "\n".join(lines).rstrip()
