@@ -16,16 +16,16 @@ def search_docs(
     top_k: int = 5,
 ) -> str:
     """
-    Run a similarity search against the documentation collection.
+    Run a similarity search against the TechWeb-derived documentation collection (SGE / SCC operations).
 
     Environment (optional overrides):
 
     - ``SCC_CHROMA_PATH``: persistence directory (default: ``<mcp-scc>/data/chroma``).
-    - ``SCC_CHROMA_COLLECTION``: collection name (default: ``scc_docs``).
+    - ``SCC_CHROMA_COLLECTION``: collection name (default: ``scc_documentation``, populated by ``scripts/scrape_and_ingest_techweb.py``).
     """
     base = Path(__file__).resolve().parent.parent
     path = Path(chroma_path or os.environ.get("SCC_CHROMA_PATH", str(base / "data" / "chroma")))
-    name = collection_name or os.environ.get("SCC_CHROMA_COLLECTION", "scc_docs")
+    name = collection_name or os.environ.get("SCC_CHROMA_COLLECTION", "scc_documentation")
     top_k = max(1, min(int(top_k), 50))
 
     if not path.is_dir():

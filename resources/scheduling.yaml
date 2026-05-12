@@ -1,0 +1,53 @@
+meta:
+  uri: scc://reference/scheduling
+  name: SCC parallel environments and runtimes (SGE)
+  description: >-
+    Parallel environments (-pe), typical slot counts, and shared-node runtime caps from TechWeb
+    “Running Parallel Batch Jobs” and “Submitting your Batch Job”. Not a substitute for **qstat** / man pages.
+  mime_type: text/yaml
+
+terminology: |
+  SCC documentation uses **processor** to mean **core**; SGE also refers to **slots**. OpenMP and
+  threaded jobs use the **omp** (or **smp**) parallel environment on a **single node**. Multi-node MPI
+  uses **mpi_28_tasks_per_node** or **mpi_64_tasks_per_node** with **mpirun -np $NSLOTS**.
+
+parallel_environments:
+  - name: omp (or smp)
+    purpose: Multiple cores on one shared node (OpenMP, pthreads, MATLAB, Stata, etc.).
+    allocation: All N slots on one node; node may still host other users’ jobs.
+    n_values_note: |
+      N can be 1–28 or 36; TechWeb recommends choosing **1, 2, 3, 4, 8, 16, 28, 32, or 36** for better
+      queue behavior (other counts may wait longer). N=36 targets very large memory (≈1TB) nodes.
+    max_runtime_hours_shared: 720
+    openmp_pattern: "export OMP_NUM_THREADS=$NSLOTS"
+
+  - name: mpi_28_tasks_per_node
+    purpose: MPI on nodes with 28 cores; N must be a **multiple of 28**.
+    max_cores_example: 448
+    max_runtime_hours: 120
+    note: "Single-node N=28 can run up to 720h per table; multi-node (N≥56) uses the shorter MPI cap."
+    mpirun: "module load openmpi/…; mpirun -np $NSLOTS ./program"
+
+  - name: mpi_64_tasks_per_node
+    purpose: Whole 64-core nodes for MPI; N must be a **multiple of 64**, minimum **128** (two nodes).
+    max_cores_example: 1024
+    max_runtime_hours: 120
+
+gpu_jobs:
+  note: |
+    GPUs are requested via **qsub** / **qrsh** with **-l gpus=…** plus optional **gpu_c**, **gpu_type**,
+    **gpu_memory**. Inspect live inventory with **qgpus** and **qgpus -v** (see GPU computing page).
+
+buy_in_and_queues:
+  note: |
+    Buy-in groups may use **#$ -l buyin** under a project with buy-in access, or target a specific
+    **-q queuename** when you know the queue name. Wrong project → “no suitable queues” errors.
+
+interactive_mpi:
+  example: "qrsh -pe mpi_28_tasks_per_node 56 -now n"
+  mpirun_note: "mpirun -np … inside the interactive host; hostfile managed by SCC."
+
+how_to_verify_live:
+  - "TechWeb pages ingested into this server’s Chroma collection (tool: search_docs)."
+  - "man qsub / man qstat on SCC for local option syntax."
+  - "help@scc.bu.edu for policy and corner cases."

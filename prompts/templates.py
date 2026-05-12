@@ -1,4 +1,4 @@
-"""Reusable MCP prompts for Slurm batch scripts (BU SCC conventions)."""
+"""Reusable MCP prompts for SGE / qsub batch scripts (BU SCC TechWeb conventions)."""
 
 from __future__ import annotations
 
@@ -7,81 +7,104 @@ import mcp.types as types
 _PROMPT_ARG_COMMON = [
     types.PromptArgument(
         name="job_name",
-        description="Slurm job name (-J); short alphanumeric + underscores.",
+        description="SGE job name for #$ -N (short alphanumeric + underscores).",
         required=False,
     ),
     types.PromptArgument(
-        name="partition",
-        description="Target partition (e.g. shared, interactive, gpu); verify against SCC docs.",
+        name="project",
+        description="SCC project for #$ -P (same string you use with qsub).",
         required=False,
     ),
     types.PromptArgument(
-        name="account",
-        description="Slurm account / project string (#SBATCH -A).",
+        name="queue",
+        description="Optional queue name for #$ -q (buy-in or GPU queues when you know the name).",
         required=False,
     ),
     types.PromptArgument(
         name="walltime",
-        description="Wall time limit as HH:MM:SS for #SBATCH -t.",
+        description="Hard wall clock limit hh:mm:ss for #$ -l h_rt=… (default 12:00:00 in many examples).",
         required=False,
     ),
     types.PromptArgument(
         name="modules",
-        description="Space-separated module names to load (e.g. 'gcc/12 cuda').",
+        description="Space-separated module names to load after module purge.",
         required=False,
     ),
     types.PromptArgument(
         name="workdir",
-        description="Working directory for the job (cd here before running commands).",
+        description="Directory to cd into before running commands (optional; default stays in submit dir).",
         required=False,
     ),
 ]
+
+
+def _project(arguments: dict[str, str] | None) -> str:
+    """SCC project: prefer `project`, fall back to legacy `account` key."""
+    if not arguments:
+        return "<SCC_PROJECT>"
+    p = arguments.get("project") or arguments.get("account")
+    return "<SCC_PROJECT>" if p in (None, "") else p
 
 
 def list_prompt_definitions() -> list[types.Prompt]:
     return [
         types.Prompt(
             name="write_batch_job",
-            description="Draft a generic CPU Slurm batch script for BU SCC with #SBATCH headers and a sample body.",
+            description="Draft a generic CPU-oriented SGE qsub script for BU SCC (#$, -P, h_rt, optional -pe omp).",
             arguments=_PROMPT_ARG_COMMON
             + [
                 types.PromptArgument(
+                    name="pe_omp_slots",
+                    description="If set, add #$ -pe omp N for shared-memory / threaded jobs (e.g. 8).",
+                    required=False,
+                ),
+                types.PromptArgument(
                     name="command",
-                    description="Main command to run after modules load (e.g. python train.py).",
+                    description="Commands to run after modules (e.g. python myscript.py).",
                     required=False,
                 ),
             ],
         ),
         types.Prompt(
             name="write_gpu_job",
-            description="Draft a GPU Slurm batch script for BU SCC (GRES, partition, CUDA modules).",
+            description="Draft an SGE GPU qsub script for BU SCC (-pe omp, -l gpus=, -l gpu_c=, modules).",
             arguments=_PROMPT_ARG_COMMON
             + [
                 types.PromptArgument(
-                    name="gpus_per_node",
-                    description="GPUs per node for --gres=gpu:N (default 1).",
+                    name="cpu_slots",
+                    description="CPU slots for #$ -pe omp N (e.g. 4) alongside GPUs.",
+                    required=False,
+                ),
+                types.PromptArgument(
+                    name="gpus",
+                    description="Number of GPUs for #$ -l gpus=N (e.g. 1).",
+                    required=False,
+                ),
+                types.PromptArgument(
+                    name="gpu_c",
+                    description="Minimum GPU compute capability for #$ -l gpu_c=… (e.g. 7.0).",
                     required=False,
                 ),
                 types.PromptArgument(
                     name="command",
-                    description="Main GPU command (e.g. python train.py).",
+                    description="Main GPU workload (e.g. python my_pytorch_prog.py).",
                     required=False,
                 ),
             ],
         ),
         types.Prompt(
             name="write_job_array",
-            description="Draft a Slurm job array script for BU SCC with %a/%A placeholders and per-task logic.",
+            description="Draft an SGE array job script (#$ -t range, SGE_TASK_ID, NSLOTS patterns).",
             arguments=_PROMPT_ARG_COMMON
             + [
                 types.PromptArgument(
-                    name="array_spec",
-                    description="Array range for #SBATCH -a (e.g. 1-100%10).",
+                    name="array_range",
+                    description="Array range for #$ -t (e.g. 1-100 or 1-3).",
                     required=False,
                 ),
                 types.PromptArgument(
                     name="command",
-                    description="Command template using SLURM_ARRAY_TASK_ID if needed.",
+                    description="Per-task command using SGE_TASK_ID or file-index pattern.",
                     required=False,
                 ),
             ],
@@ -97,26 +120,28 @@ def _arg(arguments: dict[str, str] | None, key: str, default: str) -> str:
 
 
 def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
-    job_name = _arg(arguments, "job_name", "my_job")
-    partition = _arg(arguments, "partition", "shared")
-    account = _arg(arguments, "account", "<BU_SCC_PROJECT>")
-    walltime = _arg(arguments, "walltime", "01:00:00")
-    modules = _arg(arguments, "modules", "gcc")
-    workdir = _arg(arguments, "workdir", "$SLURM_SUBMIT_DIR")
-    command = _arg(arguments, "command", "echo 'Replace with your workload'")
+    job_name = _arg(arguments, "job_name", "myjob")
+    project = _project(arguments)
+    queue = _arg(arguments, "queue", "")
+    walltime = _arg(arguments, "walltime", "12:00:00")
+    modules = _arg(arguments, "modules", "python3/3.13.8")
+    workdir = _arg(arguments, "workdir", "")
+    command = _arg(arguments, "command", "python -V")
 
     if name == "write_batch_job":
+        pe_omp = _arg(arguments, "pe_omp_slots", "")
         text = _generic_batch_text(
             job_name=job_name,
-            partition=partition,
-            account=account,
+            project=project,
+            queue=queue,
             walltime=walltime,
             modules=modules,
             workdir=workdir,
+            pe_omp_slots=pe_omp,
             command=command,
         )
         return types.GetPromptResult(
-            description="Generic CPU batch job for BU SCC",
+            description="Generic SGE / qsub CPU batch script for BU SCC",
             messages=[
                 types.PromptMessage(
                     role="user",
@@ -125,19 +150,23 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
             ],
         )
     if name == "write_gpu_job":
-        gpus = _arg(arguments, "gpus_per_node", "1")
+        cpus = _arg(arguments, "cpu_slots", "4")
+        gpus = _arg(arguments, "gpus", "1")
+        gpu_c = _arg(arguments, "gpu_c", "7.0")
         text = _gpu_batch_text(
             job_name=job_name,
-            partition=partition,
-            account=account,
+            project=project,
+            queue=queue,
             walltime=walltime,
             modules=modules,
             workdir=workdir,
-            gpus_per_node=gpus,
+            cpu_slots=cpus,
+            gpus=gpus,
+            gpu_c=gpu_c,
             command=command,
         )
         return types.GetPromptResult(
-            description="GPU batch job for BU SCC",
+            description="SGE GPU qsub script for BU SCC",
             messages=[
                 types.PromptMessage(
                     role="user",
@@ -146,19 +175,19 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
             ],
         )
     if name == "write_job_array":
-        array_spec = _arg(arguments, "array_spec", "1-10%4")
+        array_range = _arg(arguments, "array_range", _arg(arguments, "array_spec", "1-10"))
         text = _array_batch_text(
             job_name=job_name,
-            partition=partition,
-            account=account,
+            project=project,
+            queue=queue,
             walltime=walltime,
             modules=modules,
             workdir=workdir,
-            array_spec=array_spec,
+            array_range=array_range,
             command=command,
         )
         return types.GetPromptResult(
-            description="Slurm job array for BU SCC",
+            description="SGE array job (qsub) for BU SCC",
             messages=[
                 types.PromptMessage(
                     role="user",
@@ -169,116 +198,142 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
     raise ValueError(f"Unknown prompt: {name}")
 
 
+def _queue_lines(queue: str) -> str:
+    if not queue.strip():
+        return "# (optional) #$ -q specific_queue_name"
+    return f"#$ -q {queue}"
+
+
+def _cd_block(workdir: str) -> str:
+    if not workdir.strip():
+        return "# Job starts in the submission directory by default."
+    return f"cd {workdir}"
+
+
 def _generic_batch_text(
     *,
     job_name: str,
-    partition: str,
-    account: str,
+    project: str,
+    queue: str,
     walltime: str,
     modules: str,
     workdir: str,
+    pe_omp_slots: str,
     command: str,
 ) -> str:
     mod_lines = "\n".join(f"module load {m}" for m in modules.split()) if modules.strip() else "# module load ..."
+    pe_block = (
+        f"#$ -pe omp {pe_omp_slots}\nexport OMP_NUM_THREADS=$NSLOTS"
+        if pe_omp_slots.strip()
+        else "# (optional) #$ -pe omp N   # then: export OMP_NUM_THREADS=$NSLOTS"
+    )
     return f"""You are helping a user run work on the Boston University Shared Computing Cluster (SCC).
 
-Write a **complete, ready-to-submit Slurm batch script** for a **CPU-only** job.
+Write a **complete, ready-to-submit Sun Grid Engine (SGE) batch script** for **qsub** on SCC.
 
-Requirements:
-- Use `#!/bin/bash` shebang.
-- Include standard `#SBATCH` directives: job name (-J), partition (-p), account (-A), walltime (-t), nodes/cores appropriate for SCC (start with 1 node, 4–8 tasks/cores unless the user implied otherwise).
-- Load modules with `module purge` then explicit `module load` lines.
-- `cd` to the requested working directory (use this value: {workdir}).
-- Use `srun` for the main parallel step when running MPI or multi-task programs; otherwise plain shell is fine for a single-process script.
-- Add brief comments explaining each `#SBATCH` line.
-- Do **not** invent live cluster limits; mention the user should confirm partition/account with `sacctmgr` / SCC docs / `module avail`.
-
-Context from prompt arguments (substitute sensibly, keep placeholders if still unknown):
-- job_name: {job_name}
-- partition: {partition}
-- account: {account}
-- walltime: {walltime}
-- modules (space-separated input, expand each): {modules}
-- command to run: {command}
-
-Example module block shape (replace with user's modules):
+Hard requirements from BU TechWeb documentation:
+- Shebang **must** be `#!/bin/bash -l` whenever the script uses **module**.
+- Use **#$** lines for qsub directives (NOT #SBATCH).
+- Include **#$ -P** with the SCC project: {project}
+- Include **#$ -l h_rt={walltime}** (hard wall clock limit).
+- Include **#$ -N {job_name}** and commonly **#$ -j y** to merge stdout/stderr unless the user needs separate files.
+- Optional queue selection:
+{_queue_lines(queue)}
+- Parallel / threaded section (omit or adjust if this is strictly single-slot):
+{pe_block}
+- `module purge` then loads:
 {mod_lines}
+- Working directory:
+{_cd_block(workdir)}
+- User’s main command(s):
+{command}
 
-Output **only** the batch script, no surrounding markdown fences unless the host requires it.
+Remind the user to:
+- End the script with a blank line if their workflow requires it (per TechWeb “Submitting your Batch Job”).
+- Pick **-pe omp** slot counts from the recommended set (1,2,3,4,8,16,28,32,36) when possible.
+- Verify limits (runtime, memory, PE) with ingested TechWeb via **search_docs** or **help@scc.bu.edu**.
+
+Output **only** the shell script (no markdown fences).
 """
 
 
 def _gpu_batch_text(
     *,
     job_name: str,
-    partition: str,
-    account: str,
+    project: str,
+    queue: str,
     walltime: str,
     modules: str,
     workdir: str,
-    gpus_per_node: str,
+    cpu_slots: str,
+    gpus: str,
+    gpu_c: str,
     command: str,
 ) -> str:
-    mod_lines = "\n".join(f"module load {m}" for m in modules.split()) if modules.strip() else "# module load cuda/... cudnn/..."
-    return f"""You are helping a user run **GPU** work on BU SCC.
+    mod_lines = "\n".join(f"module load {m}" for m in modules.split()) if modules.strip() else "# module load miniconda / academic-ml / ..."
+    return f"""You are helping a user run a **GPU job** on BU SCC using **qsub** and SGE resource requests.
 
-Write a **complete Slurm batch script** that requests GPUs correctly for SCC.
+Write a **complete batch script** following TechWeb “Batch Script Examples” (GPU section) and GPU computing pages.
 
 Requirements:
-- `#!/bin/bash`
-- `#SBATCH` directives including: job name, partition (often a GPU partition — user hint: {partition}), account, walltime, cpus-per-task, mem, and **GPU GRES** (e.g. `#SBATCH --gres=gpu:{gpus_per_node}` — use {gpus_per_node} unless inconsistent with the user's request).
-- Load CUDA/cudnn or framework modules; use `module purge` first.
-- `cd` to {workdir}
-- Prefer `srun` for the GPU launch line when using MPI+GPU patterns; for single-node deep learning, calling the command after `module load` is acceptable if commented.
-- Remind briefly to check `nvidia-smi` inside an interactive session if debugging drivers.
-
-Arguments:
-- job_name: {job_name}
-- partition: {partition}
-- account: {account}
-- walltime: {walltime}
-- modules: {modules}
-- gpus_per_node: {gpus_per_node}
-- command: {command}
-
-Module block shape:
+- `#!/bin/bash -l`
+- **#$ -P {project}**
+- **#$ -l h_rt={walltime}**
+- **#$ -N {job_name}**
+- Request CPUs with **#$ -pe omp {cpu_slots}** (example pattern from SCC GPU samples).
+- Request GPUs with **#$ -l gpus={gpus}** and capability **#$ -l gpu_c={gpu_c}** (capability is a *minimum*; the scheduler may assign newer GPUs).
+- Optional queue line:
+{_queue_lines(queue)}
+- `module purge` then the user’s stack, e.g.:
 {mod_lines}
+- Working directory:
+{_cd_block(workdir)}
+- Main command:
+{command}
 
-Output **only** the batch script.
+Mention **qgpus** / **qgpus -v** on SCC for live GPU inventory and queue mapping.
+
+Output **only** the shell script.
 """
 
 
 def _array_batch_text(
     *,
     job_name: str,
-    partition: str,
-    account: str,
+    project: str,
+    queue: str,
     walltime: str,
     modules: str,
     workdir: str,
-    array_spec: str,
+    array_range: str,
     command: str,
 ) -> str:
     mod_lines = "\n".join(f"module load {m}" for m in modules.split()) if modules.strip() else "# module load ..."
-    return f"""You are helping a user run a **Slurm job array** on BU SCC.
+    return f"""You are helping a user run an **SGE array job** on BU SCC (see TechWeb “Batch Script Examples” → Array Job Script).
 
-Write a **complete batch script** using `#SBATCH -a {array_spec}` (adjust only if clearly wrong).
+Write a **complete qsub script** using **#$ -t {array_range}**.
 
 Requirements:
-- `#!/bin/bash`
-- Standard `#SBATCH` lines plus array concurrency/throttle as implied by the array spec.
-- Use `$SLURM_ARRAY_TASK_ID`, `%a`, and `%A` in output filenames (e.g. `#SBATCH -o logs/job_%A_%a.out`).
-- `cd` to {workdir}
-- Show a minimal pattern to map task id → input file or parameter (case statement or file list) **as a commented example** the user can adapt.
-- `module purge` then loads:
+- `#!/bin/bash -l`
+- **#$ -P {project}**
+- **#$ -l h_rt={walltime}**
+- **#$ -N {job_name}**
+- **#$ -t {array_range}**
+- Optional queue:
+{_queue_lines(queue)}
+- Echo useful diagnostics with **$JOB_ID**, **$JOB_NAME**, **$SGE_TASK_ID** (TechWeb shows patterns with `echo`).
+- Teach how to pick the *n*th input (bash array indexing with `$SGE_TASK_ID` is common in SCC examples).
+- `module purge` then:
 {mod_lines}
-- User command template / intent: {command}
+- Working directory:
+{_cd_block(workdir)}
+- Per-task workload intent:
+{command}
 
-Other arguments:
-- job_name: {job_name}
-- partition: {partition}
-- account: {account}
-- walltime: {walltime}
+Language-specific reminders from SCC docs (include as brief comments in the script):
+- Python: `id = os.getenv("SGE_TASK_ID")`
+- R: `id <- as.numeric(Sys.getenv("SGE_TASK_ID"))`
+- MATLAB: `id = str2num(getenv('SGE_TASK_ID'));`
 
-Output **only** the batch script.
+Output **only** the shell script.
 """

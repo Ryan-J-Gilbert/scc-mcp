@@ -1,55 +1,52 @@
 meta:
   uri: scc://commands/modules
-  name: Environment modules (Lmod)
-  description: module load, avail, spider, and list patterns on SCC login and compute nodes.
+  name: Environment modules (SCC / Lmod)
+  description: module load, avail, spider, and list patterns on SCC; bash -l requirement for batch scripts.
   mime_type: text/yaml
 
 overview: |
-  SCC typically uses Lmod (Lua-based modules). Modules adjust PATH, LD_LIBRARY_PATH, and compiler
-  toolchain for scientific software stacks. Always load modules inside batch scripts, not only
-  in your login shell.
+  SCC uses **Lmod**-style **module** commands to load compilers, Python, MPI, CUDA stacks, etc.
+  When **module** appears in a **qsub** batch script, TechWeb requires the interpreter line
+  **#!/bin/bash -l** so module initialization is applied correctly.
 
 core_commands:
   module_load:
     syntax: module load <name[/version]> [<name2> ...]
     notes:
-      - Load order can matter when mixing compilers, MPI, and CUDA.
-      - Prefer explicit versions (module load gcc/12) over defaults when reproducibility matters.
+      - The systems Python is often outdated; load a module such as **python3/3.13.8** for supported stacks.
+      - Load order matters when mixing compilers, MPI, and CUDA.
   module_purge:
     syntax: module purge
     notes:
-      - Clears the current module stack; common first line in batch scripts before explicit loads.
+      - Clears the stack; common before explicit loads in reproducible batch scripts.
   module_list:
     syntax: module list
     meaning: Show currently loaded modules.
   module_avail:
     syntax: module avail [substring]
-    meaning: List available modules; optional substring filters the tree.
+    meaning: Browse available modules (output can be very long—pipe to **less**).
   module_spider:
     syntax: module spider <name>
-    meaning: Describe a module and versions, including what other modules may be prerequisites.
+    meaning: Describe a package and versions / prerequisites.
+
+batch_script_requirement: |
+  #!/bin/bash -l
+
+  #$ -P my_project
+  #$ -l h_rt=12:00:00
+
+  module load matlab/2021b
+  matlab -nodisplay -nodesktop -singleCompThread -batch "n=4, rand; exit"
 
 discovery_workflow:
   - step: module avail 2>&1 | less
-    detail: Browse the full tree; output can be long.
+    detail: Browse the full tree safely.
   - step: module avail cuda
-    detail: Narrow search to CUDA-related modules.
+    detail: Narrow to CUDA-related modules.
   - step: module spider openmpi
-    detail: Inspect versions and conflicts before loading in a job.
-
-collections_and_hierarchy:
-  note: |
-    Some sites expose hierarchical modules (compiler/MPI families). If a load fails, read the
-    error text: you may need to load a compiler module before an MPI or application module.
-
-batch_script_snippet: |
-  module purge
-  module load gcc/12.2.0
-  module load openmpi/4.1.x
-  which mpicc
-  mpicc -show
+    detail: Inspect MPI family before loading next to applications.
 
 gotchas:
-  - Login node module cache may differ slightly from compute images; test inside a short job.
-  - Mixing Intel and GNU stacks in one job usually fails; pick one toolchain per job.
-  - For Python + CUDA stacks, load CUDA before installing GPU wheels in a venv when building from source.
+  - Always use **bash -l** in scripts that call **module** (per SCC TechWeb).
+  - Pick one compiler/MPI family per job; mixing stacks usually fails.
+  - GPU ML stacks may use conda modules (e.g. **academic-ml/...**)—follow the GPU batch examples on TechWeb.

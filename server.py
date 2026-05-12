@@ -6,7 +6,7 @@ Environment:
 - ``SCC_RESOURCES_DIR``: directory to scan for ``*.yaml`` / ``*.md`` resources
   (default: ``<this_dir>/resources``).
 - ``SCC_CHROMA_PATH``: Chroma persistence path (default: ``<this_dir>/data/chroma``).
-- ``SCC_CHROMA_COLLECTION``: documentation collection name (default: ``scc_docs``).
+- ``SCC_CHROMA_COLLECTION``: documentation collection name (default: ``scc_documentation``, TechWeb scrape).
 - ``SCC_LOG_LEVEL``: Python logging level for this process (default: ``WARNING``).
 
 Run (from ``mcp-scc/``):
@@ -51,8 +51,9 @@ server = Server(
     version="0.1.0",
     instructions=(
         "Boston University Shared Computing Cluster (SCC) helper: static resources for "
-        "Slurm commands, modules, storage, and partitions; search_docs for semantic search "
-        "over ingested documentation in ChromaDB; prompts for CPU, GPU, and array batch scripts."
+        "Sun Grid Engine (qsub, #$ directives), modules, scratch/storage, and parallel environments; "
+        "search_docs runs semantic search over ingested BU TechWeb SCC documentation in ChromaDB; "
+        "prompts draft SGE batch scripts (CPU, GPU, array) consistent with those pages."
     ),
 )
 
@@ -77,7 +78,10 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="search_docs",
-            description="Semantic search over ingested SCC official documentation (ChromaDB).",
+            description=(
+                "Semantic search over ingested BU TechWeb SCC documentation in ChromaDB "
+                "(batch submission, PEs, MPI, GPUs, scratch, modules, etc.)."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {

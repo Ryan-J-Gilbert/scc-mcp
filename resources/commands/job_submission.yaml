@@ -1,83 +1,123 @@
 meta:
   uri: scc://commands/job_submission
-  name: Slurm job submission and control
-  description: Common sbatch, squeue, and scancel flags with short examples for SCC.
+  name: SGE / qsub job submission (SCC)
+  description: >-
+    BU SCC batch scheduling uses Sun Grid Engine (SGE): qsub, script lines beginning with #$,
+    qstat/qdel, and interactive qrsh. Summarized from TechWeb “Submitting your Batch Job” and related pages.
   mime_type: text/yaml
 
 overview: |
-  SCC uses Slurm for scheduling. Submit batch scripts with sbatch, monitor with squeue/scontrol,
-  and cancel with scancel. Always confirm partition and account strings with your PI or SCC staff.
+  Non-interactive jobs are submitted with **qsub**. Directives can be passed on the command line or
+  embedded in the job script on lines starting with **#$**. When the script uses **module**, the
+  first line must be **#!/bin/bash -l** so modules are interpreted correctly. End the script with a
+  blank line before submission if required by your workflow. For full examples see TechWeb
+  “Batch Script Examples” and use **search_docs** on this server for the ingested pages.
 
-sbatch:
-  description: Submit a batch script to the scheduler queue.
-  common_flags:
-    - flag: "-J, --job-name"
-      meaning: Human-readable job name shown in squeue.
-    - flag: "-p, --partition"
-      meaning: Target partition (e.g. shared, interactive, or a GPU partition).
-    - flag: "-A, --account"
-      meaning: Slurm account / project to charge (SCC-specific string from your allocation).
-    - flag: "-t, --time"
-      meaning: Wall clock limit HH:MM:SS (must be within partition limits).
-    - flag: "-N, --nodes"
-      meaning: Number of nodes.
-    - flag: "-n, --ntasks"
-      meaning: Number of tasks (MPI ranks unless using srun overrides).
-    - flag: "--mem"
-      meaning: Memory per node or per CPU depending on cluster config; verify with SCC docs.
-    - flag: "-c, --cpus-per-task"
-      meaning: CPUs allocated per task for OpenMP / threaded codes.
-    - flag: "-o, -e"
-      meaning: Paths for stdout / stderr files; %j expands to job id.
-    - flag: "--gres"
-      meaning: Generic resources, commonly GPUs, e.g. --gres=gpu:1.
-    - flag: "-a, --array"
-      meaning: Job array specification such as 1-100%10 (task id available as SLURM_ARRAY_TASK_ID).
-  example: |
-    #!/bin/bash
-    #SBATCH -J myjob
-    #SBATCH -p shared
-    #SBATCH -A <BU_SCC_PROJECT>
-    #SBATCH -t 01:00:00
-    #SBATCH -n 4
-    #SBATCH -o logs/%j.out
-    module purge
-    module load gcc
-    srun ./my_mpi_program
+qsub:
+  description: Submit a command or script to the batch system.
+  common_patterns:
+    - command: "qsub script.sh"
+      meaning: Submit a shell script whose #$ lines are parsed as qsub options.
+    - command: "qsub -b y printenv"
+      meaning: Run a binary/executable directly; **-b y** tells the scheduler the next token is the executable.
+  output_files:
+    note: |
+      Default stdout/stderr are often named like jobname.o#JOBID and jobname.e#JOBID in the job’s
+      working directory unless you redirect with -o / -e or merge with -j y.
 
-squeue:
-  description: Show jobs in the queue.
-  useful_flags:
-    - flag: "-u $USER"
-      meaning: Only your jobs.
-    - flag: "-p PARTITION"
-      meaning: Filter by partition.
-    - flag: "-t PENDING,RUNNING"
-      meaning: Filter by state.
-    - flag: "-l"
-      meaning: Long format with more fields.
-    - flag: "--start"
-      meaning: Estimated start times when available.
-  example: squeue -u $USER -o "%.18i %.9P %.20j %.8u %.8T %.10M %.6D %R"
+script_directives:
+  description: >-
+    In-script options use #$ (not #SBATCH). Common directives from SCC documentation:
+  table:
+    - directive: "#$ -P project_name"
+      meaning: SCC project to charge; **mandatory** for users on Med.Campus-associated projects.
+    - directive: "#$ -l h_rt=hh:mm:ss"
+      meaning: Hard wall-clock limit (default often 12 hours; max depends on job type—see runtime table).
+    - directive: "#$ -N job_name"
+      meaning: Job name (default is script or command name).
+    - directive: "#$ -o path / #$ -e path"
+      meaning: Separate stdout / stderr files.
+    - directive: "#$ -j y"
+      meaning: Merge stderr into stdout file.
+    - directive: "#$ -m b|e|a|s|n"
+      meaning: Mail when job begins/ends/aborts/suspends/n (default n).
+    - directive: "#$ -M user@domain"
+      meaning: Override email for job reports.
+    - directive: "#$ -V"
+      meaning: Export current environment into the job.
+    - directive: "#$ -v VAR=value"
+      meaning: Set an environment variable in the job.
+    - directive: "#$ -hold_jid id_list"
+      meaning: Job dependency list (comma-separated ids/names).
 
-scancel:
-  description: Cancel pending or running jobs.
-  patterns:
-    - command: scancel <jobid>
-      meaning: Cancel a single job or array parent id.
-    - command: scancel -u $USER
-      meaning: Cancel all of your jobs (dangerous).
-    - command: scancel --name=pattern
-      meaning: Cancel jobs whose name matches pattern (use with care).
-  tip: Prefer cancelling by explicit job id copied from squeue.
+resource_requests:
+  description: >-
+    Request CPUs, memory, MPI layout, GPUs, architecture, arrays, etc. via -l and -pe.
+    See resource **scc://reference/scheduling** and TechWeb “Resources Available for your Jobs”.
+  examples:
+    - directive: "#$ -l mem_per_core=8G"
+      meaning: Request a node with at least this memory per core (values like 3G, 4G, … 28G per docs).
+    - directive: "#$ -pe omp N"
+      meaning: Shared-memory / threaded jobs on one node; **NSLOTS** is set to N (use with OpenMP).
+    - directive: "#$ -pe mpi_28_tasks_per_node N"
+      meaning: MPI on 28-core nodes; N must be a multiple of 28 (see parallel-batch page).
+    - directive: "#$ -t 1-75000"
+      meaning: Array job; task index in **SGE_TASK_ID** (and related SGE_TASK_* variables).
+    - directive: "#$ -l gpus=G"
+      meaning: Request G GPUs; pair with **-l gpu_type=…**, **-l gpu_c=…**, **-l gpu_memory=…** as needed.
+  gpu_discovery:
+    command: "qgpus"
+    note: "Run on SCC to list GPU types and availability; **qgpus -v** for capability, memory, queues."
 
-scontrol:
-  note: |
-    Administrative and detailed job information (scontrol show job <id>, hold/release).
-    Some subcommands are restricted; see SCC documentation for supported usage.
+runtime_limits_shared_nodes:
+  note: "Illustrative table from SCC docs—confirm current values on TechWeb."
+  rows:
+    - job_type: Single processor
+      max_walltime_hours: 720
+    - job_type: OMP (shared-memory / omp PE)
+      max_walltime_hours: 720
+    - job_type: MPI
+      max_walltime_hours: 120
+    - job_type: GPU
+      max_walltime_hours: 48
 
-interactive:
-  hint: |
-    For an interactive shell or single command on a compute node, SCC may offer salloc/srun
-    patterns or dedicated interactive partitions—check current SCC user guide for the
-    recommended incantation on this cluster.
+environment_variables:
+  note: "Set by the batch system when the job runs (subset from SCC docs)."
+  examples:
+    - name: JOB_ID
+      meaning: Current job id.
+    - name: JOB_NAME
+      meaning: Job name.
+    - name: NSLOTS
+      meaning: Slots/cores requested (e.g. with -pe omp or mpi PE).
+    - name: HOSTNAME
+      meaning: Execution host.
+    - name: SGE_TASK_ID
+      meaning: Array task index.
+    - name: TMPDIR
+      meaning: Per-job temporary directory on the node.
+
+qstat:
+  description: Inspect the queue; exact flags depend on site configuration—see **man qstat** on SCC.
+
+qdel:
+  description: Cancel jobs by id (and array tasks per SGE rules).
+
+interactive_mpi:
+  description: Request an interactive allocation for MPI debugging (TechWeb “Running MPI jobs in an Interactive Session”).
+  examples:
+    - command: "qrsh -pe mpi_28_tasks_per_node 56"
+      meaning: Interactive shell with 56 cores on 28-core-per-node layout.
+    - command: "qrsh -pe mpi_28_tasks_per_node 56 -now n"
+      meaning: Wait past the default interactive wait window until resources are available.
+  run_mpi:
+    note: "Inside the session, **mpirun -np $NSLOTS ./binary**; hostfile is handled by the system."
+
+minimal_batch_example: |
+  #!/bin/bash -l
+  #$ -P my_project
+  #$ -l h_rt=12:00:00
+  #$ -N myjob
+  #$ -j y
+  module load python3/3.13.8
+  python myscript.py

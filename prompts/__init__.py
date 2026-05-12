@@ -1,1 +1,1 @@
-# Prompt templates for Slurm job scripts (BU SCC oriented).
+# Prompt templates for SGE / qsub job scripts (BU SCC TechWeb oriented).

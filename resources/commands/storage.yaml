@@ -1,41 +1,63 @@
 meta:
   uri: scc://commands/storage
-  name: Storage, quotas, and common paths
-  description: Quota-related commands and typical scratch/project path patterns on SCC.
+  name: Storage, scratch, and job I/O (SCC)
+  description: >-
+    Per-node scratch, TMPDIR, /net paths, memory fairness, and related commands—aligned with
+    TechWeb “Resources Available for your Jobs”.
   mime_type: text/yaml
 
-disclaimer: |
-  Exact mount points and policy change over time. Treat the paths below as illustrative patterns;
-  verify against the current SCC storage documentation and `df -h` on the system you use.
+overview: |
+  Memory and scratch behavior on SCC is described in terms of **slots** (cores) and **fair share**
+  on shared nodes. Local **scratch** and **TMPDIR** are the right places for large temporary job I/O;
+  project space may be slower for high-throughput patterns.
 
-path_patterns:
-  home:
-    pattern: "~ or $HOME"
-    use: Small files, source, dotfiles; often backed up but limited quota.
-  scratch:
-    pattern: "$SCRATCH or /path/to/scratch/<user>"
-    use: High-performance parallel filesystem space for job I/O; purge policies may apply.
-  project:
-    pattern: "/project/<group_name>/..."
-    use: Shared allocation storage for a lab or grant; permissions managed by the PI.
+runtime:
+  default_interactive_and_batch_hours: 12
+  note: |
+    Request shorter or longer walltimes with **#$ -l h_rt=hh:mm:ss** (see submitting-jobs page).
+    Shorter runtimes can improve scheduling opportunities (e.g. many buy-in nodes accept ≤12h jobs).
+
+memory_fairness:
+  note: |
+    Memory limits are enforced at dispatch time; the scheduler cannot cap RSS after the job starts.
+    On a fully packed node, a single-slot job should stay near **TotalMemory / NumCores** for that
+    node class. Request more slots (**-pe omp N**) and/or **-l mem_per_core=…** when you need more RAM.
+
+scratch_local:
+  path: "/scratch"
+  meaning: Local scratch on each compute node; **not backed up**; files may be removed after **31 days**.
+  remote_access_pattern: "/net/scc-xx#/scratch"
+  meaning: >-
+    Reach another node’s scratch from elsewhere by hostname pattern **scc-xx#** (see Technical Summary
+    for full node names). Example: **cd /net/scc-fc3/scratch**.
+
+tmpdir:
+  env: TMPDIR
+  meaning: >-
+    Per-job temporary directory created when the job is dispatched; contents removed when the job ends.
+    Use for intermediates you do not need to keep.
+
+project_disk:
+  note: |
+    Project disk space is appropriate for shared datasets and results; for heavy I/O, stage inputs
+    or intermediates on local scratch when practical.
+
+gpu_inventory:
+  command: "qgpus"
+  note: "Short GPU summary; **qgpus -v** for capability, memory, CPU counts, and queue assignments."
+
+network:
+  note: |
+    Most nodes use 1GbE to shared filesystems; a subset has 10GbE. Multi-node MPI jobs use InfiniBand
+    (e.g. 40G QDR / 56G FDR per TechWeb).
 
 quota_and_usage_commands:
-  - command: "quota -s"
-    note: Classic NFS quota view when applicable.
   - command: "df -h"
-    note: See mounted filesystems and free space for current hosts.
-  - command: "lfs quota -h -u $USER /scratch_mount_point"
-    note: Lustre sites sometimes expose lfs quota; mount name varies—check SCC docs.
+    note: Filesystem free space on the host you run it from.
   - command: "du -sh directory"
-    note: Measure footprint before archiving or moving data.
-
-data_movement:
-  - pattern: rsync -avh --progress src/ dest/
-    note: Preferred for large trees; combine with `-h` for human sizes.
-  - pattern: tar -cf archive.tar data/ && pigz archive.tar
-    note: Compress archives on compute if CPU allows; avoid heavy gzip on login nodes at scale.
+    note: Measure directory size before archiving.
 
 job_io_recommendations:
-  - Read inputs from project or read-only reference datasets when possible.
-  - Write large temporary files to scratch, not home.
-  - Use unique per-job subdirectories to avoid collisions in shared project space.
+  - Prefer reading large shared inputs from project or reference datasets.
+  - Write burst I/O to **/scratch** or **$TMPDIR** during the run, then copy results back to project.
+  - Clean scratch artifacts you no longer need—frees space for other users.
